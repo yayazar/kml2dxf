@@ -55,7 +55,7 @@
 <body>
 <main>
   <h1>KML / KMZ / GPX → DXF</h1>
-  <p class="alt">Google Earth / GPS Visualizer noktalarını TUREF (ITRF96) 3° dilimine çevirip kotlu DXF, Netcad NCN ve CSV olarak indirin. Dosya tarayıcıdan dışarı çıkmaz.</p>
+  <p class="alt">Google Earth / GPS Visualizer noktalarını TUREF (ITRF96) 3° dilimine çevirip kotlu DXF, Netcad NCN ve CSV olarak indirin. Dosya hiçbir sunucuya yüklenmez; kotu eksik noktalar varsa yalnızca o noktaların koordinatları yükseklik servisine gönderilir.</p>
 
   <section class="panel">
     <div id="birak" tabindex="0">
@@ -82,6 +82,10 @@
       <div>
         <label for="onek">Nokta adı öneki</label>
         <input id="onek" type="text" value="P" maxlength="10">
+      </div>
+      <div>
+        <label for="kotKaynak">Eksik kotları otomatik çek</label>
+        <select id="kotKaynak"></select>
       </div>
     </div>
     <div style="margin-top:10px">
@@ -116,13 +120,20 @@
 (function () {
   "use strict";
   const $ = (id) => document.getElementById(id);
-  let okunan = null;   // { ad, tur, noktalar }
+  let okunan = null;   // { ad, tur, ham, noktalar, kotBilgi }
   let sonuc = null;    // { noktalar, atlanan, dilim, ayar }
 
   const dilimSec = $("dilim");
   dilimSec.add(new Option("Otomatik (boylamdan)", "oto"));
   for (const d of K2D.DILIMLER) dilimSec.add(new Option(`TUREF / TM${d.dom} — EPSG:${d.epsg}`, d.dom));
   try { const s = localStorage.getItem("k2d-dilim"); if (s) dilimSec.value = s; } catch (e) {}
+
+  const kaynakSec = $("kotKaynak");
+  kaynakSec.add(new Option("Kapalı", "kapali"));
+  for (const [k, v] of Object.entries(K2D.KOT_KAYNAKLARI)) kaynakSec.add(new Option(v.ad, k));
+  kaynakSec.value = "srtm30m";
+  try { const s = localStorage.getItem("k2d-kaynak"); if (s && kaynakSec.querySelector(`option[value="${s}"]`)) kaynakSec.value = s; } catch (e) {}
+  let cekimNo = 0; // eski çekimlerin sonucunu yok saymak için
 
   function mesaj(metin, tur) {
     const d = document.createElement("div");
@@ -163,16 +174,56 @@
       const metin = await dosyaOku(dosya);
       const r = K2D.xmlOku(metin, DOMParser);
       if (!r.noktalar.length) throw new Error("Dosyada nokta bulunamadı.");
-      okunan = { ad: dosya.name.replace(/\.[^.]+$/, ""), ...r };
-      hesapla();
+      okunan = { ad: dosya.name.replace(/\.[^.]+$/, ""), tur: r.tur, ham: r.noktalar };
+      await kotlariTamamla();
     } catch (e) {
       mesaj(e.message || String(e), "hata");
     }
   }
 
+  async function getJson(url) {
+    const y = await fetch(url);
+    let veri = null;
+    try { veri = await y.json(); } catch (e) {}
+    if (!y.ok || !veri) throw new Error((veri && (veri.reason || (typeof veri.error === "string" && veri.error))) || `HTTP ${y.status}`);
+    return veri;
+  }
+
+  // Ham noktalardan başlayıp seçili servisten eksik kotları doldurur, sonra hesaplar.
+  async function kotlariTamamla() {
+    if (!okunan) return;
+    const no = ++cekimNo;
+    okunan.noktalar = okunan.ham.map((n) => ({ ...n }));
+    okunan.kotBilgi = null;
+    const siralar = K2D.eksikKotlar(okunan.noktalar);
+    const kaynak = kaynakSec.value;
+    if (siralar.length && kaynak !== "kapali") {
+      $("mesajlar").innerHTML = "";
+      $("sonuc").hidden = true;
+      mesaj(`${siralar.length} noktanın kotu ${K2D.KOT_KAYNAKLARI[kaynak].ad} servisinden çekiliyor…`, "uyari");
+      const durum = $("mesajlar").lastChild;
+      try {
+        const dolan = await K2D.kotCek(okunan.noktalar, siralar, kaynak, getJson, {
+          ilerleme: (i, n) => { durum.textContent = `Kot çekiliyor: ${i} / ${n} nokta…`; },
+        });
+        if (no !== cekimNo) return;
+        okunan.kotBilgi = { tur: "uyari", metin: `${dolan} noktanın kotu ${K2D.KOT_KAYNAKLARI[kaynak].ad} servisinden alındı (yaklaşık değer, birkaç metre hata olabilir).` +
+          (dolan < siralar.length ? ` ${siralar.length - dolan} nokta servis kapsamı dışında kaldı.` : "") };
+      } catch (e) {
+        if (no !== cekimNo) return;
+        const ipucu = K2D.KOT_KAYNAKLARI[kaynak].proxy && location.protocol === "file:"
+          ? " Sayfa dosyadan açıldığı için OpenTopoData aracısı (/api/kot) yok; kaynak olarak Open-Meteo seçin."
+          : " Başka bir kot kaynağı seçerek yeniden deneyebilirsiniz.";
+        okunan.kotBilgi = { tur: "hata", metin: `Kot çekilemedi: ${e.message || e}.` + ipucu };
+      }
+    }
+    if (no === cekimNo) hesapla();
+  }
+
   function hesapla() {
     if (!okunan) return;
     $("mesajlar").innerHTML = "";
+    if (okunan.kotBilgi) mesaj(okunan.kotBilgi.metin, okunan.kotBilgi.tur);
     const a = ayarlar();
     const dilim = dilimSec.value === "oto"
       ? K2D.otomatikDilim(okunan.noktalar)
@@ -184,7 +235,7 @@
     const r = K2D.donustur(okunan.noktalar, dilim.dom, proj4, a);
     if (r.atlanan) mesaj(`${r.atlanan} nokta kotu olmadığı için atlandı. Almak için "Kotu olmayan noktaları da al" kutusunu işaretleyin.`, "uyari");
     if (!r.noktalar.length) { $("sonuc").hidden = true; mesaj("Aktarılacak nokta kalmadı.", "hata"); return; }
-    if (r.noktalar.every((n) => n.z === 0)) mesaj("Tüm kotlar 0. Dosyada yükseklik bilgisi yok gibi görünüyor (Google Earth KMZ'lerinde sık olur). GPS Visualizer gibi bir araçla kot ekleyin.", "uyari");
+    if (r.noktalar.every((n) => n.z === 0)) mesaj("Tüm kotlar 0. Dosyada yükseklik bilgisi yok gibi görünüyor (Google Earth KMZ'lerinde sık olur). \"Eksik kotları otomatik çek\" seçeneğinden bir kaynak seçin.", "uyari");
     sonuc = { ...r, dilim, ayar: a };
     goster();
   }
@@ -217,9 +268,13 @@
     }).join("");
 
     const ilk = n.slice(0, 100);
-    $("tablo").innerHTML = "<thead><tr><th>Ad</th><th>Y (sağa)</th><th>X (yukarı)</th><th>Z</th></tr></thead><tbody>" +
-      ilk.map((p) => `<tr><td>${esc(p.ad)}</td><td>${p.y.toFixed(3)}</td><td>${p.x.toFixed(3)}</td><td>${p.z.toFixed(3)}</td></tr>`).join("") +
-      (n.length > ilk.length ? `<tr><td colspan="4" class="not">… ${n.length - ilk.length} nokta daha</td></tr>` : "") + "</tbody>";
+    $("tablo").innerHTML = "<thead><tr><th>Ad</th><th>Y (sağa)</th><th>X (yukarı)</th><th>Z</th><th>Kot kaynağı</th></tr></thead><tbody>" +
+      ilk.map((p) => `<tr><td>${esc(p.ad)}</td><td>${p.y.toFixed(3)}</td><td>${p.x.toFixed(3)}</td><td>${p.z.toFixed(3)}</td><td>${esc(kaynakAdi(p.kaynak))}</td></tr>`).join("") +
+      (n.length > ilk.length ? `<tr><td colspan="5" class="not">… ${n.length - ilk.length} nokta daha</td></tr>` : "") + "</tbody>";
+  }
+
+  function kaynakAdi(k) {
+    return k === "dosya" ? "dosya" : k === "yok" ? "yok (Z = 0)" : (K2D.KOT_KAYNAKLARI[k] || { ad: k }).ad;
   }
 
   function esc(s) {
@@ -249,6 +304,7 @@
   birak.ondrop = (e) => { e.preventDefault(); birak.classList.remove("uzerinde"); if (e.dataTransfer.files[0]) yukle(e.dataTransfer.files[0]); };
 
   dilimSec.onchange = () => { try { localStorage.setItem("k2d-dilim", dilimSec.value); } catch (e) {} hesapla(); };
+  kaynakSec.onchange = () => { try { localStorage.setItem("k2d-kaynak", kaynakSec.value); } catch (e) {} kotlariTamamla(); };
   for (const id of ["yazi", "ondalik", "onek", "dosyaAdlari", "noYaz", "kotYaz", "kotsuz"]) $(id).addEventListener("change", hesapla);
   window.addEventListener("resize", () => { if (sonuc && !$("sonuc").hidden) goster(); });
 })();

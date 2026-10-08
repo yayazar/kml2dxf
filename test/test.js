@@ -44,4 +44,63 @@ assert.strictEqual(ncn, "P1 525543.280 4451779.505 1500.000");
 assert.strictEqual(K2D.csvYaz(r.noktalar).split("\r\n")[0], "P1,525543.280,4451779.505,1500.000");
 
 assert.throws(() => K2D.xmlOku("<foo/>", DOMParser), /Tanınmayan/);
-console.log("Tüm testler geçti.");
+// 4) Eksik kot tespiti ve otomatik kot çekme (sahte servis)
+assert.deepStrictEqual(K2D.eksikKotlar(g.noktalar), [2]); // yalnızca kotsuz trkpt
+const sifir = [{ lat: 41, lon: 41, z: 0 }, { lat: 41.1, lon: 41.1, z: 0 }];
+assert.deepStrictEqual(K2D.eksikKotlar(sifir), [0, 1]); // hepsi 0 -> Google Earth, hepsi eksik
+assert.deepStrictEqual(K2D.eksikKotlar([{ z: 0 }, { z: 12 }]), []); // tek 0 gerçek kot sayılır
+
+(async () => {
+  // OpenTopoData biçimi, 250 nokta -> 3 parti (100/100/50), bir nokta kapsam dışı
+  const cok = Array.from({ length: 250 }, (_, i) => ({ lat: 40 + i / 1000, lon: 41, z: null }));
+  const urller = [];
+  const dolan = await K2D.kotCek(cok, cok.map((_, i) => i), "srtm30m", async (url) => {
+    urller.push(url);
+    const loc = decodeURIComponent(url.split("locations=")[1]).split("|");
+    return { results: loc.map((l, k) => ({ elevation: urller.length === 1 && k === 0 ? null : 1000 + k })) };
+  }, { bekleMs: 0 });
+  assert.strictEqual(urller.length, 3);
+  assert.ok(urller[0].startsWith("/api/kot?dataset=srtm30m&locations="));
+  assert.strictEqual(dolan, 249);
+  assert.strictEqual(cok[0].z, null);
+  assert.strictEqual(cok[1].z, 1001); assert.strictEqual(cok[1].kaynak, "srtm30m");
+  assert.strictEqual(cok[249].z, 1049);
+
+  // Open-Meteo biçimi
+  const om = sifir.map((n) => ({ ...n }));
+  await K2D.kotCek(om, [0, 1], "openmeteo", async (url) => {
+    assert.ok(url.startsWith("https://api.open-meteo.com/v1/elevation?latitude=41.000000,41.100000&longitude="));
+    return { elevation: [2081, 2119] };
+  });
+  assert.deepStrictEqual(om.map((n) => n.z), [2081, 2119]);
+  const ro = K2D.donustur(om, 42, proj4, ayar).noktalar;
+  assert.strictEqual(ro[0].kaynak, "openmeteo");
+
+  // Servis hatası yukarı iletilir
+  await assert.rejects(K2D.kotCek(om, [0], "openmeteo", async () => ({ error: true, reason: "limit" })), /limit/);
+
+  // 5) Vercel aracı fonksiyonu
+  const handler = require("../api/kot.js");
+  const cagir = async (query, sahteFetch) => {
+    const eski = global.fetch; global.fetch = sahteFetch;
+    const res = { kod: 0, govde: null, basliklar: {}, status(k) { this.kod = k; return this; }, json(v) { this.govde = v; return this; }, setHeader(k, v) { this.basliklar[k] = v; } };
+    try { await handler({ query }, res); } finally { global.fetch = eski; }
+    return res;
+  };
+  let r1 = await cagir({ dataset: "kotu", locations: "41,41" });
+  assert.strictEqual(r1.kod, 400);
+  r1 = await cagir({ dataset: "srtm30m", locations: "41,41|abc" });
+  assert.strictEqual(r1.kod, 400);
+  r1 = await cagir({ dataset: "srtm30m", locations: Array(101).fill("41,41").join("|") });
+  assert.strictEqual(r1.kod, 400);
+  let giden = null;
+  r1 = await cagir({ dataset: "eudem25m", locations: "41.1,41.2|41.3,41.4" }, async (url) => {
+    giden = url; return { ok: true, status: 200, json: async () => ({ results: [{ elevation: 1 }, { elevation: 2 }] }) };
+  });
+  assert.strictEqual(r1.kod, 200);
+  assert.strictEqual(giden, "https://api.opentopodata.org/v1/eudem25m?locations=41.1%2C41.2%7C41.3%2C41.4");
+  r1 = await cagir({ dataset: "srtm30m", locations: "41,41" }, async () => { throw new Error("ağ"); });
+  assert.strictEqual(r1.kod, 502);
+
+  console.log("Tüm testler geçti.");
+})().catch((e) => { console.error(e); process.exit(1); });

@@ -94,7 +94,7 @@
       if (kotsuz && !ayar.kotsuzlariAl) { atlanan++; return; }
       const [y, x] = p.forward([n.lon, n.lat]);
       const ad = ayar.dosyaAdlari && n.ad ? n.ad : `${onek}${i + 1}`;
-      cikti.push({ ad, y, x, z: kotsuz ? 0 : n.z });
+      cikti.push({ ad, y, x, z: kotsuz ? 0 : n.z, kaynak: kotsuz ? "yok" : n.kaynak || "dosya" });
     });
     return { noktalar: cikti, atlanan };
   }
@@ -161,5 +161,61 @@
     return noktalar.map((n) => `${n.ad.replace(/,/g, "_")},${n.y.toFixed(3)},${n.x.toFixed(3)},${n.z.toFixed(3)}`).join("\r\n") + "\r\n";
   }
 
-  return { DILIMLER, projTanimi, otomatikDilim, xmlOku, donustur, dxfYaz, ncnYaz, csvYaz };
+  // Kot kaynakları. "proxy": OpenTopoData CORS vermediği için /api/kot üzerinden çağrılır.
+  const KOT_KAYNAKLARI = {
+    srtm30m: { ad: "SRTM 30 m (OpenTopoData)", proxy: true },
+    eudem25m: { ad: "EU-DEM 25 m (OpenTopoData)", proxy: true },
+    aster30m: { ad: "ASTER 30 m (OpenTopoData)", proxy: true },
+    openmeteo: { ad: "Copernicus 90 m (Open-Meteo)", proxy: false },
+  };
+  const PARTI = 100; // her iki servis de istek başına en çok 100 nokta alır
+
+  // Kotu eksik noktaların sırası: z yoksa, ya da dosyadaki tüm kotlar 0 ise
+  // (Google Earth "zemine yapışık" kaydeder) hepsi.
+  function eksikKotlar(noktalar) {
+    const yok = (n) => n.z === null || !isFinite(n.z);
+    if (noktalar.length && noktalar.every((n) => yok(n) || n.z === 0)) return noktalar.map((_, i) => i);
+    return noktalar.map((n, i) => (yok(n) ? i : -1)).filter((i) => i >= 0);
+  }
+
+  function kotUrl(kaynak, parti, temel) {
+    if (kaynak === "openmeteo") {
+      const lat = parti.map((n) => n.lat.toFixed(6)).join(",");
+      const lon = parti.map((n) => n.lon.toFixed(6)).join(",");
+      return `https://api.open-meteo.com/v1/elevation?latitude=${lat}&longitude=${lon}`;
+    }
+    const loc = parti.map((n) => `${n.lat.toFixed(6)},${n.lon.toFixed(6)}`).join("|");
+    return `${temel || ""}/api/kot?dataset=${kaynak}&locations=${encodeURIComponent(loc)}`;
+  }
+
+  // Eksik kotları servisten doldurur; n.z ve n.kaynak yazılır. getJson(url) -> Promise<json>.
+  // Dönüş: doldurulan nokta sayısı. Servisin kapsamadığı (null) noktalar olduğu gibi kalır.
+  async function kotCek(noktalar, siralar, kaynak, getJson, ayar) {
+    const a = ayar || {};
+    if (!KOT_KAYNAKLARI[kaynak]) throw new Error(`Bilinmeyen kot kaynağı: ${kaynak}`);
+    const bekle = a.bekleMs !== undefined ? a.bekleMs : KOT_KAYNAKLARI[kaynak].proxy ? 1100 : 0;
+    let dolan = 0;
+    for (let i = 0; i < siralar.length; i += PARTI) {
+      if (i && bekle) await new Promise((r) => setTimeout(r, bekle));
+      const parti = siralar.slice(i, i + PARTI).map((s) => noktalar[s]);
+      const yanit = await getJson(kotUrl(kaynak, parti, a.temel));
+      const kotlar = kaynak === "openmeteo"
+        ? yanit.elevation
+        : (yanit.results || []).map((r) => r.elevation);
+      if (!Array.isArray(kotlar) || kotlar.length !== parti.length) {
+        const neden = yanit.reason || (typeof yanit.error === "string" ? yanit.error : null);
+        throw new Error(neden || "Kot servisi beklenmeyen yanıt verdi.");
+      }
+      parti.forEach((n, k) => {
+        if (kotlar[k] !== null && isFinite(kotlar[k])) { n.z = Number(kotlar[k]); n.kaynak = kaynak; dolan++; }
+      });
+      if (a.ilerleme) a.ilerleme(Math.min(i + PARTI, siralar.length), siralar.length);
+    }
+    return dolan;
+  }
+
+  return {
+    DILIMLER, KOT_KAYNAKLARI, projTanimi, otomatikDilim, xmlOku, donustur, dxfYaz, ncnYaz, csvYaz,
+    eksikKotlar, kotUrl, kotCek,
+  };
 });
