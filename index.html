@@ -1,0 +1,257 @@
+<!doctype html>
+<html lang="tr">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>KML / GPX → DXF</title>
+<style>
+  :root {
+    --bg: #f5f6f8; --panel: #ffffff; --text: #1d2330; --muted: #5f6b7a; --line: #d9dee5;
+    --accent: #1f6feb; --accent-text: #ffffff; --warn-bg: #fff4d6; --warn-text: #6b4e00;
+    --err-bg: #fde4e4; --err-text: #8a1c1c; --point: #d1242f;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --bg: #14171c; --panel: #1d2128; --text: #e6e9ee; --muted: #9aa5b4; --line: #333a44;
+      --accent: #4a8ff0; --accent-text: #0d1117; --warn-bg: #3b3115; --warn-text: #f0d68a;
+      --err-bg: #3f1d1d; --err-text: #f4b4b4; --point: #ff6b6b;
+    }
+  }
+  * { box-sizing: border-box; }
+  body { margin: 0; background: var(--bg); color: var(--text); font: 15px/1.5 system-ui, -apple-system, "Segoe UI", Roboto, sans-serif; }
+  main { max-width: 960px; margin: 0 auto; padding: 24px 16px 48px; }
+  h1 { font-size: 1.5rem; margin: 0 0 4px; }
+  .alt { color: var(--muted); margin: 0 0 20px; }
+  .panel { background: var(--panel); border: 1px solid var(--line); border-radius: 10px; padding: 16px; margin-bottom: 16px; }
+  #birak { border: 2px dashed var(--line); border-radius: 10px; padding: 28px 16px; text-align: center; cursor: pointer; }
+  #birak.uzerinde { border-color: var(--accent); }
+  #birak strong { color: var(--accent); }
+  .izgara { display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 12px 16px; }
+  label { display: block; font-size: 0.85rem; color: var(--muted); margin-bottom: 4px; }
+  select, input[type=number], input[type=text] {
+    width: 100%; padding: 7px 9px; border: 1px solid var(--line); border-radius: 6px; background: var(--bg); color: var(--text); font: inherit;
+  }
+  .kutu { display: flex; align-items: center; gap: 8px; color: var(--text); font-size: 0.95rem; margin: 4px 0; }
+  .kutu input { margin: 0; }
+  .butonlar { display: flex; flex-wrap: wrap; gap: 8px; }
+  button { padding: 9px 16px; border: 0; border-radius: 6px; background: var(--accent); color: var(--accent-text); font: inherit; font-weight: 600; cursor: pointer; }
+  button:disabled { opacity: 0.4; cursor: default; }
+  .mesaj { padding: 10px 12px; border-radius: 6px; margin-bottom: 16px; }
+  .uyari { background: var(--warn-bg); color: var(--warn-text); }
+  .hata { background: var(--err-bg); color: var(--err-text); }
+  .ozet { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 8px; margin-bottom: 12px; }
+  .ozet div { font-size: 0.85rem; color: var(--muted); }
+  .ozet b { display: block; color: var(--text); font-size: 1rem; font-variant-numeric: tabular-nums; overflow-wrap: anywhere; }
+  #onizleme { width: 100%; height: 320px; border: 1px solid var(--line); border-radius: 6px; background: var(--bg); }
+  .tablo { overflow-x: auto; margin-top: 12px; }
+  table { border-collapse: collapse; width: 100%; font-variant-numeric: tabular-nums; font-size: 0.9rem; }
+  th, td { padding: 4px 8px; border-bottom: 1px solid var(--line); text-align: right; white-space: nowrap; }
+  th:first-child, td:first-child { text-align: left; }
+  th { color: var(--muted); font-weight: 600; }
+  .not { color: var(--muted); font-size: 0.85rem; }
+  [hidden] { display: none !important; }
+</style>
+</head>
+<body>
+<main>
+  <h1>KML / KMZ / GPX → DXF</h1>
+  <p class="alt">Google Earth / GPS Visualizer noktalarını TUREF (ITRF96) 3° dilimine çevirip kotlu DXF, Netcad NCN ve CSV olarak indirin. Dosya tarayıcıdan dışarı çıkmaz.</p>
+
+  <section class="panel">
+    <div id="birak" tabindex="0">
+      <strong>Dosya seçin</strong> veya buraya sürükleyin<br>
+      <span class="not">.gpx, .kml, .kmz</span>
+    </div>
+    <input id="dosya" type="file" accept=".gpx,.kml,.kmz" hidden>
+  </section>
+
+  <section class="panel">
+    <div class="izgara">
+      <div>
+        <label for="dilim">Koordinat sistemi</label>
+        <select id="dilim"></select>
+      </div>
+      <div>
+        <label for="yazi">Yazı yüksekliği (m)</label>
+        <input id="yazi" type="number" min="0.1" step="0.1" value="1">
+      </div>
+      <div>
+        <label for="ondalik">Kot yazısı ondalık</label>
+        <select id="ondalik"><option>0</option><option>1</option><option selected>2</option><option>3</option></select>
+      </div>
+      <div>
+        <label for="onek">Nokta adı öneki</label>
+        <input id="onek" type="text" value="P" maxlength="10">
+      </div>
+    </div>
+    <div style="margin-top:10px">
+      <label class="kutu"><input id="dosyaAdlari" type="checkbox"> Dosyadaki nokta adlarını kullan (yoksa önek + sıra no)</label>
+      <label class="kutu"><input id="noYaz" type="checkbox" checked> DXF'e nokta adı yaz (NOKTA_NO katmanı)</label>
+      <label class="kutu"><input id="kotYaz" type="checkbox" checked> DXF'e kot yaz (KOT katmanı)</label>
+      <label class="kutu"><input id="kotsuz" type="checkbox"> Kotu olmayan noktaları da al (Z = 0)</label>
+    </div>
+  </section>
+
+  <div id="mesajlar"></div>
+
+  <section class="panel" id="sonuc" hidden>
+    <div class="ozet" id="ozet"></div>
+    <svg id="onizleme" role="img" aria-label="Nokta önizlemesi"></svg>
+    <div class="butonlar" style="margin-top:12px">
+      <button id="indirDxf">DXF indir</button>
+      <button id="indirNcn">Netcad NCN indir</button>
+      <button id="indirCsv">CSV (PENZ) indir</button>
+    </div>
+    <p class="not">DXF: R12, 3B POINT + TEXT. Katmanlar NOKTA (kırmızı), NOKTA_NO (yeşil), KOT (sarı). NCN: <code>Ad Y X Z</code>. CSV: <code>Ad,Doğu,Kuzey,Z</code> → Civil 3D'de "PENZ (comma delimited)".</p>
+    <div class="tablo"><table id="tablo"></table></div>
+  </section>
+
+  <p class="not">Not: Google kaynaklı kotlar birkaç metre hata içerebilir; ön etüt içindir, proje kotu yerine geçmez.</p>
+</main>
+
+<script src="https://cdnjs.cloudflare.com/ajax/libs/proj4js/2.9.0/proj4.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
+<script src="core.js"></script>
+<script>
+(function () {
+  "use strict";
+  const $ = (id) => document.getElementById(id);
+  let okunan = null;   // { ad, tur, noktalar }
+  let sonuc = null;    // { noktalar, atlanan, dilim, ayar }
+
+  const dilimSec = $("dilim");
+  dilimSec.add(new Option("Otomatik (boylamdan)", "oto"));
+  for (const d of K2D.DILIMLER) dilimSec.add(new Option(`TUREF / TM${d.dom} — EPSG:${d.epsg}`, d.dom));
+  try { const s = localStorage.getItem("k2d-dilim"); if (s) dilimSec.value = s; } catch (e) {}
+
+  function mesaj(metin, tur) {
+    const d = document.createElement("div");
+    d.className = "mesaj " + tur;
+    d.textContent = metin;
+    $("mesajlar").appendChild(d);
+  }
+
+  function ayarlar() {
+    return {
+      yaziBoyu: Math.max(0.1, parseFloat($("yazi").value) || 1),
+      kotOndalik: parseInt($("ondalik").value, 10),
+      onek: $("onek").value.trim() || "P",
+      dosyaAdlari: $("dosyaAdlari").checked,
+      noYaz: $("noYaz").checked,
+      kotYaz: $("kotYaz").checked,
+      kotsuzlariAl: $("kotsuz").checked,
+    };
+  }
+
+  async function dosyaOku(dosya) {
+    const uzanti = dosya.name.split(".").pop().toLowerCase();
+    if (uzanti === "kmz") {
+      const zip = await JSZip.loadAsync(dosya);
+      const kmller = Object.keys(zip.files).filter((n) => n.toLowerCase().endsWith(".kml"));
+      if (!kmller.length) throw new Error("KMZ içinde .kml dosyası bulunamadı.");
+      const ana = kmller.find((n) => n.toLowerCase() === "doc.kml") || kmller[0];
+      return zip.file(ana).async("string");
+    }
+    return dosya.text();
+  }
+
+  async function yukle(dosya) {
+    $("mesajlar").innerHTML = "";
+    $("sonuc").hidden = true;
+    okunan = null;
+    try {
+      const metin = await dosyaOku(dosya);
+      const r = K2D.xmlOku(metin, DOMParser);
+      if (!r.noktalar.length) throw new Error("Dosyada nokta bulunamadı.");
+      okunan = { ad: dosya.name.replace(/\.[^.]+$/, ""), ...r };
+      hesapla();
+    } catch (e) {
+      mesaj(e.message || String(e), "hata");
+    }
+  }
+
+  function hesapla() {
+    if (!okunan) return;
+    $("mesajlar").innerHTML = "";
+    const a = ayarlar();
+    const dilim = dilimSec.value === "oto"
+      ? K2D.otomatikDilim(okunan.noktalar)
+      : K2D.DILIMLER.find((d) => String(d.dom) === dilimSec.value);
+    const ortLon = okunan.noktalar.reduce((s, p) => s + p.lon, 0) / okunan.noktalar.length;
+    if (Math.abs(ortLon - dilim.dom) > 1.5) {
+      mesaj(`Noktaların ortalama boylamı ${ortLon.toFixed(2)}°, seçilen dilim TM${dilim.dom}. Dilim dışındasınız, doğru dilimi seçtiğinizden emin olun.`, "uyari");
+    }
+    const r = K2D.donustur(okunan.noktalar, dilim.dom, proj4, a);
+    if (r.atlanan) mesaj(`${r.atlanan} nokta kotu olmadığı için atlandı. Almak için "Kotu olmayan noktaları da al" kutusunu işaretleyin.`, "uyari");
+    if (!r.noktalar.length) { $("sonuc").hidden = true; mesaj("Aktarılacak nokta kalmadı.", "hata"); return; }
+    if (r.noktalar.every((n) => n.z === 0)) mesaj("Tüm kotlar 0. Dosyada yükseklik bilgisi yok gibi görünüyor (Google Earth KMZ'lerinde sık olur). GPS Visualizer gibi bir araçla kot ekleyin.", "uyari");
+    sonuc = { ...r, dilim, ayar: a };
+    goster();
+  }
+
+  function goster() {
+    const n = sonuc.noktalar;
+    const ys = n.map((p) => p.y), xs = n.map((p) => p.x), zs = n.map((p) => p.z);
+    const min = (v) => v.reduce((a, b) => Math.min(a, b)), max = (v) => v.reduce((a, b) => Math.max(a, b));
+    const kutu = (b, d) => `<div>${b}<b>${esc(d)}</b></div>`;
+    $("ozet").innerHTML =
+      kutu("Dosya", `${okunan.ad} (${okunan.tur})`) +
+      kutu("Nokta", `${n.length} / ${okunan.noktalar.length}`) +
+      kutu("Sistem", `TM${sonuc.dilim.dom} · EPSG:${sonuc.dilim.epsg}`) +
+      kutu("Y (sağa)", `${min(ys).toFixed(2)} – ${max(ys).toFixed(2)}`) +
+      kutu("X (yukarı)", `${min(xs).toFixed(2)} – ${max(xs).toFixed(2)}`) +
+      kutu("Kot", `${min(zs).toFixed(2)} – ${max(zs).toFixed(2)}`);
+
+    // önizleme: eşit ölçekli, kuzey yukarı
+    $("sonuc").hidden = false;
+    const svg = $("onizleme");
+    const W = svg.clientWidth || 600, H = svg.clientHeight || 320, pay = 12;
+    const y0 = min(ys), x0 = min(xs);
+    const gen = max(ys) - y0 || 1, yuk = max(xs) - x0 || 1;
+    const olcek = Math.min((W - 2 * pay) / gen, (H - 2 * pay) / yuk);
+    const ox = (W - gen * olcek) / 2, oy = (H - yuk * olcek) / 2;
+    svg.setAttribute("viewBox", `0 0 ${W} ${H}`);
+    svg.innerHTML = n.map((p) => {
+      const cx = ox + (p.y - y0) * olcek, cy = H - oy - (p.x - x0) * olcek;
+      return `<circle cx="${cx.toFixed(1)}" cy="${cy.toFixed(1)}" r="2.2" fill="var(--point)"><title>${esc(p.ad)}  Z=${p.z.toFixed(2)}</title></circle>`;
+    }).join("");
+
+    const ilk = n.slice(0, 100);
+    $("tablo").innerHTML = "<thead><tr><th>Ad</th><th>Y (sağa)</th><th>X (yukarı)</th><th>Z</th></tr></thead><tbody>" +
+      ilk.map((p) => `<tr><td>${esc(p.ad)}</td><td>${p.y.toFixed(3)}</td><td>${p.x.toFixed(3)}</td><td>${p.z.toFixed(3)}</td></tr>`).join("") +
+      (n.length > ilk.length ? `<tr><td colspan="4" class="not">… ${n.length - ilk.length} nokta daha</td></tr>` : "") + "</tbody>";
+  }
+
+  function esc(s) {
+    return String(s).replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
+  }
+
+  function indir(icerik, uzanti, tip) {
+    const blob = new Blob([icerik], { type: tip });
+    const a = document.createElement("a");
+    a.href = URL.createObjectURL(blob);
+    a.download = `${okunan.ad}_TM${sonuc.dilim.dom}.${uzanti}`;
+    document.body.appendChild(a);
+    a.click();
+    setTimeout(() => { URL.revokeObjectURL(a.href); a.remove(); }, 1000);
+  }
+
+  $("indirDxf").onclick = () => indir(K2D.dxfYaz(sonuc.noktalar, sonuc.ayar), "dxf", "application/dxf");
+  $("indirNcn").onclick = () => indir(K2D.ncnYaz(sonuc.noktalar), "ncn", "text/plain");
+  $("indirCsv").onclick = () => indir(K2D.csvYaz(sonuc.noktalar), "csv", "text/csv");
+
+  const birak = $("birak"), girdi = $("dosya");
+  birak.onclick = () => girdi.click();
+  birak.onkeydown = (e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); girdi.click(); } };
+  girdi.onchange = () => { if (girdi.files[0]) yukle(girdi.files[0]); girdi.value = ""; };
+  birak.ondragover = (e) => { e.preventDefault(); birak.classList.add("uzerinde"); };
+  birak.ondragleave = () => birak.classList.remove("uzerinde");
+  birak.ondrop = (e) => { e.preventDefault(); birak.classList.remove("uzerinde"); if (e.dataTransfer.files[0]) yukle(e.dataTransfer.files[0]); };
+
+  dilimSec.onchange = () => { try { localStorage.setItem("k2d-dilim", dilimSec.value); } catch (e) {} hesapla(); };
+  for (const id of ["yazi", "ondalik", "onek", "dosyaAdlari", "noYaz", "kotYaz", "kotsuz"]) $(id).addEventListener("change", hesapla);
+  window.addEventListener("resize", () => { if (sonuc && !$("sonuc").hidden) goster(); });
+})();
+</script>
+</body>
+</html>

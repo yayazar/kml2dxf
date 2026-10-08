@@ -1,0 +1,2 @@
+pyproj>=3.6
+ezdxf>=1.1

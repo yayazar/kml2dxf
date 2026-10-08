@@ -1,0 +1,4 @@
+node_modules/
+test/cikti/
+__pycache__/
+*.pyc

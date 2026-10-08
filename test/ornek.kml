@@ -1,0 +1,7 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<kml xmlns="http://www.opengis.net/kml/2.2"><Document>
+  <Placemark><name>Nokta1</name><Point><coordinates>36.2,37.1,950.5</coordinates></Point></Placemark>
+  <Placemark><name>Hat</name><LineString><coordinates>
+    36.21,37.11,960 36.22,37.12,970
+  </coordinates></LineString></Placemark>
+</Document></kml>

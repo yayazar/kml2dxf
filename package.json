@@ -1,0 +1,26 @@
+{
+  "name": "kml2dxf",
+  "version": "1.0.0",
+  "description": "GPX/KML/KMZ noktalarini TUREF TM dilimine cevirip kotlu DXF/NCN/CSV ureten web araci",
+  "directories": {
+    "test": "test"
+  },
+  "scripts": {
+    "test": "node test/test.js"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/yayazar/kml2dxf.git"
+  },
+  "license": "MIT",
+  "type": "commonjs",
+  "bugs": {
+    "url": "https://github.com/yayazar/kml2dxf/issues"
+  },
+  "homepage": "https://github.com/yayazar/kml2dxf#readme",
+  "devDependencies": {
+    "@xmldom/xmldom": "^0.8.10",
+    "proj4": "^2.9.0"
+  },
+  "private": true
+}
