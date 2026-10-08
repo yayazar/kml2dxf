@@ -2,3 +2,6 @@ node_modules/
 test/cikti/
 __pycache__/
 *.pyc
+
+.vercel
+.env*
