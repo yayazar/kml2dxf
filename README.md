@@ -12,7 +12,7 @@ Google Earth / GPS Visualizer kaynaklı **GPX, KML, KMZ** noktalarını **TUREF 
 
 ## Web arayüzü
 
-Vercel'de yayınlanır (`index.html` + `api/kot.js` fonksiyonu). Dönüşüm tarayıcıda yapılır; dosya hiçbir sunucuya yüklenmez.
+Vercel'de yayınlanır (`index.html` + `api/kot.js` fonksiyonu). Ziyaret sayıları Vercel Web Analytics (çerezsiz) ile tutulur; proje panelinde Analytics sekmesinden açılmalıdır. Dönüşüm tarayıcıda yapılır; dosya hiçbir sunucuya yüklenmez.
 
 Canlı: **https://kml2dxf.vercel.app**
 
