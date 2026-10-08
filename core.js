@@ -94,7 +94,7 @@
       if (kotsuz && !ayar.kotsuzlariAl) { atlanan++; return; }
       const [y, x] = p.forward([n.lon, n.lat]);
       const ad = ayar.dosyaAdlari && n.ad ? n.ad : `${onek}${i + 1}`;
-      cikti.push({ ad, y, x, z: kotsuz ? 0 : n.z, kaynak: kotsuz ? "yok" : n.kaynak || "dosya" });
+      cikti.push({ ad, y, x, z: kotsuz ? 0 : n.z, kaynak: kotsuz ? "yok" : n.kaynak || "dosya", lat: n.lat, lon: n.lon });
     });
     return { noktalar: cikti, atlanan };
   }

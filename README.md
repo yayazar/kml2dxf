@@ -14,12 +14,18 @@ Google Earth / GPS Visualizer kaynaklı **GPX, KML, KMZ** noktalarını **TUREF 
 
 Vercel'de yayınlanır (`index.html` + `api/kot.js` fonksiyonu). Dönüşüm tarayıcıda yapılır; dosya hiçbir sunucuya yüklenmez.
 
-- Dosyayı sürükleyip bırakın (`.gpx`, `.kml`, `.kmz`).
+Canlı: **https://kml2dxf.vercel.app**
+
+- Dosyayı sayfanın herhangi bir yerine sürükleyip bırakın (`.kmz`, `.kml`, `.gpx`).
+- Noktalar **uydu / sokak haritası** üzerinde kota göre renklendirilmiş görünür; üzerine gelince ad, Y, X, Z ve kot kaynağı çıkar.
+- **Tablo** sekmesinde tüm noktalar, ada göre arama ile.
+- **Hepsini indir (.zip)** ile DXF + NCN + CSV tek seferde; ya da koordinatları sekme ayraçlı olarak panoya kopyalayıp Excel / Netcad'e yapıştırın.
+- Seçimler (dilim, kot kaynağı, DXF ayarları) tarayıcıda hatırlanır.
 - Dilimi seçin veya **Otomatik** bırakın (ortalama boylamdan en yakın orta meridyen).
 - Yazı yüksekliği, kot ondalığı, nokta adı öneki, dosyadaki adları kullanma seçenekleri vardır.
 - **Eksik kotlar otomatik çekilir** (aşağıya bakın). Çekilemeyen noktalar varsayılan olarak atlanır; isterseniz Z = 0 ile alınır.
 
-Bağımlılıklar CDN'den yüklenir: [proj4js](https://github.com/proj4js/proj4js) 2.9.0, [JSZip](https://stuk.github.io/jszip/) 3.10.1.
+Bağımlılıklar CDN'den yüklenir: [proj4js](https://github.com/proj4js/proj4js) 2.9.0, [JSZip](https://stuk.github.io/jszip/) 3.10.1, [Leaflet](https://leafletjs.com/) 1.9.4. Harita altlığı: Esri World Imagery ve OpenStreetMap.
 
 ### Okunan veriler
 
